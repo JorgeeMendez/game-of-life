@@ -39,22 +39,18 @@ void printUint(const uint64_t *bitChain, size_t *xLocal, size_t bitWidth)
 
 void printGrid(const uint64_t *grid, size_t gridLength, size_t gridWith, size_t bitWidth)
 {
-    if (gridLength == 0)
-        return;
-
-    size_t prevRow = 0;
+    // Simple printing function to print our current grid
     size_t xLocal = 0;
-
     for (size_t i = 0; i < gridLength; i++)
     {
-        size_t row = i / gridWith;
-        if (row != prevRow)
+        size_t row = i %width;
+        printUint(grid + i, &xLocal, bitWidth);
+
+        if (row == width - 1 )
         {
             printf("\n");
-            prevRow = row;
             xLocal = 0;
         }
-        printUint(grid + i, &xLocal, bitWidth);
     }
     printf("\n");
 }
