@@ -37,7 +37,7 @@ void printUint(const uint64_t *bitChain, size_t *xLocal, size_t bitWidth)
     }
 }
 
-void printGrid(const uint64_t *grid, size_t gridLength, size_t width, size_t bitWidth)
+void printGrid(const uint64_t *grid, size_t gridLength, size_t gridWith, size_t bitWidth)
 {
     if (gridLength == 0)
         return;
@@ -47,7 +47,7 @@ void printGrid(const uint64_t *grid, size_t gridLength, size_t width, size_t bit
 
     for (size_t i = 0; i < gridLength; i++)
     {
-        size_t row = i / width;
+        size_t row = i / gridWith;
         if (row != prevRow)
         {
             printf("\n");
@@ -58,11 +58,19 @@ void printGrid(const uint64_t *grid, size_t gridLength, size_t width, size_t bit
     }
     printf("\n");
 }
+/*
+bool getCellState(size_t x, size_t y)
+{
+}
 
+uint8_t num_neighbours(size_t x, size_t y)
+{
+}
+*/
 // void initializeGame(int argc, char *argv[], AppState *state){}
 int main(int argc, char *argv[])
 {
-    AppState state = {.height = 2, .width = 20, .gens = 100, .targetHz = 60, .boundary = TORUS};
+    AppState state = {.height = 2, .width = 5, .gens = 100, .targetHz = 60, .boundary = TORUS};
     AppState *PtState = &state;
     /*
     for (int i = 1; i < argc; i++)
