@@ -28,18 +28,23 @@ typedef struct AppState
 
 #define TYPESIZE 64
 
-void printUint(uint64_t *bitChain)
+void printUint(const uint64_t *bitChain, size_t *xLocal, size_t bitWidth)
 {
-    for (size_t i = 0; i < TYPESIZE; i++)
+    for (size_t i = 0; i < TYPESIZE && *xLocal < bitWidth; i++)
     {
         ((*bitChain >> i) & 1) ? printf("*") : printf(".");
+        (*xLocal)++;
     }
 }
 
-void printGrid(uint64_t *grid, size_t gridLength, size_t width)
+void printGrid(const uint64_t *grid, size_t gridLength, size_t width, size_t bitWidth)
 {
-    // Simple printing function to print our current grid
+    if (gridLength == 0)
+        return;
+
     size_t prevRow = 0;
+    size_t xLocal = 0;
+
     for (size_t i = 0; i < gridLength; i++)
     {
         size_t row = i / width;
@@ -47,15 +52,17 @@ void printGrid(uint64_t *grid, size_t gridLength, size_t width)
         {
             printf("\n");
             prevRow = row;
+            xLocal = 0;
         }
-        printUint(grid + i);
+        printUint(grid + i, &xLocal, bitWidth);
     }
+    printf("\n");
 }
 
 // void initializeGame(int argc, char *argv[], AppState *state){}
 int main(int argc, char *argv[])
 {
-    AppState state = {.height = 2, .width = 64, .gens = 100, .targetHz = 60, .boundary = TORUS};
+    AppState state = {.height = 2, .width = 20, .gens = 100, .targetHz = 60, .boundary = TORUS};
     AppState *PtState = &state;
     /*
     for (int i = 1; i < argc; i++)
@@ -99,7 +106,8 @@ int main(int argc, char *argv[])
         perror("Grid memory allocation failed.\n");
         return 1;
     }
-    printGrid(grid, gridLength, width);
+
+    printGrid(grid, gridLength, width, PtState->width);
 
     free(grid);
     return 0;
