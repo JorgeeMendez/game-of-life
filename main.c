@@ -4,6 +4,8 @@
 #include <string.h>
 #include <limits.h>
 
+#define BITS_PER_WORD 64
+
 // STRUCTURES AND ENUMERATIONS
 typedef enum Boundary : uint8_t
 {
@@ -20,77 +22,75 @@ typedef struct AppState
     uint16_t gens;
     uint8_t targetHz;
     Boundary boundary;
-    const char *input_file;
-    const char *target_file;
+    const char *inputFile;
+    const char *targetFile;
 } AppState;
 
-// CONSTANTS THAT COULD BE USEFUL
-
-#define TYPESIZE 64
-
-void printUint(const uint64_t *bitChain, size_t *xLocal, size_t bitWidth)
+void printWord(uint64_t word, size_t *cellCol, size_t cellWidth)
 {
-    for (size_t i = 0; i < TYPESIZE && *xLocal < bitWidth; i++)
+    for (size_t bit = 0; bit < BITS_PER_WORD && *cellCol < cellWidth; bit++)
     {
-        ((*bitChain >> i) & 1) ? printf("*") : printf(".");
-        (*xLocal)++;
+        ((word >> bit) & 1) ? printf("*") : printf(".");
+        (*cellCol)++;
     }
 }
 
-void printGrid(const uint64_t *grid, size_t gridLength, size_t gridWith, size_t bitWidth)
+void printGrid(const uint64_t *grid, size_t totalWords, size_t wordsPerRow, size_t cellWidth)
 {
-    // Simple printing function to print our current grid
-    size_t xLocal = 0;
-    for (size_t i = 0; i < gridLength; i++)
+    size_t cellCol = 0;
+    for (size_t wordIdx = 0; wordIdx < totalWords; wordIdx++)
     {
-        size_t row = i %width;
-        printUint(grid + i, &xLocal, bitWidth);
+        size_t wordCol = wordIdx % wordsPerRow;
+        printWord(grid[wordIdx], &cellCol, cellWidth);
 
-        if (row == width - 1 )
+        if (wordCol == wordsPerRow - 1)
         {
             printf("\n");
-            xLocal = 0;
+            cellCol = 0;
         }
     }
     printf("\n");
 }
+
 /*
-bool getCellState(size_t x, size_t y)
+bool getCellState(size_t cellX, size_t cellY)
 {
 }
 
-uint8_t num_neighbours(size_t x, size_t y)
+uint8_t countNeighbors(size_t cellX, size_t cellY)
 {
 }
 */
-// void initializeGame(int argc, char *argv[], AppState *state){}
+
+// void initializeGame(int argc, char *argv[], AppState *state) {}
+
 int main(int argc, char *argv[])
 {
     AppState state = {.height = 2, .width = 5, .gens = 100, .targetHz = 60, .boundary = TORUS};
-    AppState *PtState = &state;
+
     /*
     for (int i = 1; i < argc; i++)
     {
         if (!strcmp(argv[i], "--height"))
-            PtState->height = (uint16_t)atoi(argv[++i]);
+            state.height = (uint16_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--width"))
-            PtState->width = (uint16_t)atoi(argv[++i]);
+            state.width = (uint16_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--gens"))
-            PtState->gens = (uint16_t)atoi(argv[++i]);
+            state.gens = (uint16_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--hz"))
-            PtState->targetHz = (uint8_t)atoi(argv[++i]);
+            state.targetHz = (uint8_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--torus"))
-            PtState->boundary = TORUS;
+            state.boundary = TORUS;
         else if (!strcmp(argv[i], "--mirror"))
-            PtState->boundary = MIRROR;
+            state.boundary = MIRROR;
         else if (!strcmp(argv[i], "--rim"))
-            PtState->boundary = RIM;
+            state.boundary = RIM;
         else if (!strcmp(argv[i], "--edge"))
-            PtState->boundary = EDGE;
+            state.boundary = EDGE;
         else if (!strcmp(argv[i], "--input"))
-            PtState->input_file = argv[++i];
+            state.inputFile = argv[++i];
         else if (!strcmp(argv[i], "--output"))
-            PtState->target_file = argv[++i];
+            state.targetFile = argv[++i];
         else
         {
             printf("Unknown: %s\n", argv[i]);
@@ -98,20 +98,20 @@ int main(int argc, char *argv[])
         }
     }
     */
-    size_t height = PtState->height;
-    size_t width = (PtState->width + TYPESIZE - 1) / TYPESIZE;
-    size_t gridLength = height * width;
-    printf("height: %zu\n width: %zu\n", height, width);
 
-    // So we made a one dimensional array because it's going to be easier for the future.
-    uint64_t *grid = calloc(gridLength, sizeof(*grid));
+    size_t rowCount = state.height;
+    size_t wordsPerRow = (state.width + BITS_PER_WORD - 1) / BITS_PER_WORD;
+    size_t totalWords = rowCount * wordsPerRow;
+    printf("rows: %zu\nwords per row: %zu\n", rowCount, wordsPerRow);
+
+    uint64_t *grid = calloc(totalWords, sizeof(*grid));
     if (grid == NULL)
     {
         perror("Grid memory allocation failed.\n");
         return 1;
     }
 
-    printGrid(grid, gridLength, width, PtState->width);
+    printGrid(grid, totalWords, wordsPerRow, state.width);
 
     free(grid);
     return 0;
