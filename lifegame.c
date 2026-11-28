@@ -10,6 +10,8 @@ typedef struct
     uint64_t quatre;
 } v;
 
+/* Bit-sliced adder: adds 64 parallel 1-bit neighbors into a 3-bit counter.
+   quatre is latched with |= so counts >= 4 never wrap back to 0. */
 static inline void additionner_voisins(uint64_t p, v *c)
 {
     uint64_t r1 = c->un & p;
@@ -21,6 +23,8 @@ static inline void additionner_voisins(uint64_t p, v *c)
     c->quatre |= r2;
 }
 
+/* Evaluates 64 cells in parallel. Bit 0 is left, bit 63 is right, so left
+   neighbors shift << 1 (pulling bit 63 from p[-1]) and right shift >> 1. */
 static inline uint64_t comparer8voisins(const uint64_t *p, size_t stride)
 {
     v c = {0, 0, 0};
@@ -46,12 +50,16 @@ static inline uint64_t comparer8voisins(const uint64_t *p, size_t stride)
     additionner_voisins(left, &c);
     additionner_voisins(right, &c);
 
+    /* Alive next gen iff count == 3, or count == 2 and currently alive */
     uint64_t next = c.deux & ~c.quatre & (c.un | *p);
     return next;
 }
 
 bool world_init(World *w, uint16_t width, uint16_t height)
 {
+    w->curr = NULL;
+    w->next = NULL;
+
     if (width == 0 || height == 0)
     {
         fprintf(stderr, "Error: width and height must be > 0.\n");
@@ -60,13 +68,25 @@ bool world_init(World *w, uint16_t width, uint16_t height)
 
     w->width = width;
     w->height = height;
-    w->words = (width + BITS_PER_WORD - 1) / BITS_PER_WORD;
+    w->words = ((size_t)width + BITS_PER_WORD - 1) / BITS_PER_WORD;
     w->stride = w->words + PADDING;
 
     uint16_t rem = width % BITS_PER_WORD;
     w->last_mask = (rem == 0) ? ~0ULL : ((1ULL << rem) - 1ULL);
 
-    size_t total_words = (size_t)(height + PADDING) * w->stride;
+    size_t rows = (size_t)height + PADDING;
+    if (rows > SIZE_MAX / w->stride)
+    {
+        fprintf(stderr, "Error: grid size overflow.\n");
+        return false;
+    }
+    size_t total_words = rows * w->stride;
+
+    if (total_words > SIZE_MAX / (2 * sizeof(uint64_t)))
+    {
+        fprintf(stderr, "Error: byte count overflow.\n");
+        return false;
+    }
     size_t total_bytes = 2 * total_words * sizeof(uint64_t);
 
     if (total_bytes > MAX_MEMORY_BYTES)
@@ -113,6 +133,73 @@ void set_cell_state(World *w, uint16_t x, uint16_t y, bool alive)
         w->curr[idx] |= bit;
     else
         w->curr[idx] &= ~bit;
+}
+
+uint8_t num_neighbors(const World *w, uint16_t x, uint16_t y, Boundary boundary)
+{
+    if (x >= w->width || y >= w->height)
+        return 0;
+
+    uint8_t count = 0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+
+            if (dx == 0 && dy == 0)
+                continue;
+
+            int nx = (int)x + dx;
+            int ny = (int)y + dy;
+
+            if (boundary == BOUNDARY_EDGE)
+            {
+                if (nx < 0 || nx >= w->width || ny < 0 || ny >= w->height)
+                    continue;
+            }
+            else if (boundary == BOUNDARY_RIM)
+            {
+                if (nx < 0 || nx >= w->width || ny < 0 || ny >= w->height)
+                {
+                    count++;
+                    continue;
+                }
+            }
+            else if (boundary == BOUNDARY_TORUS)
+            {
+                if (nx < 0)
+                    nx += w->width;
+                else if (nx >= w->width)
+                    nx -= w->width;
+                if (ny < 0)
+                    ny += w->height;
+                else if (ny >= w->height)
+                    ny -= w->height;
+            }
+            else if (boundary == BOUNDARY_MIRROR)
+            {
+                if (nx < 0)
+                    nx = 0;
+                else if (nx >= w->width)
+                    nx = w->width - 1;
+                if (ny < 0)
+                    ny = 0;
+                else if (ny >= w->height)
+                    ny = w->height - 1;
+            }
+
+            if (get_cell_state(w, (uint16_t)nx, (uint16_t)ny))
+                count++;
+        }
+    }
+    return count;
+}
+
+bool get_next_state(const World *w, uint16_t x, uint16_t y, Boundary boundary)
+{
+    uint8_t n = num_neighbors(w, x, y, boundary);
+    bool alive = get_cell_state(w, x, y);
+    return (n == 3) || (n == 2 && alive);
 }
 
 static void apply_boundaries(World *w, Boundary b)
@@ -163,25 +250,24 @@ static void apply_boundaries(World *w, Boundary b)
     uint64_t *first = &w->curr[S];
     uint64_t *last = &w->curr[(size_t)w->height * S];
 
-    if (b == BOUNDARY_EDGE)
+    switch (b)
     {
+    case BOUNDARY_EDGE:
         memset(top, 0, S * sizeof(uint64_t));
         memset(bottom, 0, S * sizeof(uint64_t));
-    }
-    else if (b == BOUNDARY_RIM)
-    {
+        break;
+    case BOUNDARY_RIM:
         memset(top, 0xFF, S * sizeof(uint64_t));
         memset(bottom, 0xFF, S * sizeof(uint64_t));
-    }
-    else if (b == BOUNDARY_TORUS)
-    {
+        break;
+    case BOUNDARY_TORUS:
         memcpy(top, last, S * sizeof(uint64_t));
         memcpy(bottom, first, S * sizeof(uint64_t));
-    }
-    else if (b == BOUNDARY_MIRROR)
-    {
+        break;
+    case BOUNDARY_MIRROR:
         memcpy(top, first, S * sizeof(uint64_t));
         memcpy(bottom, last, S * sizeof(uint64_t));
+        break;
     }
 }
 
@@ -214,23 +300,75 @@ bool world_load_file(World *w, const char *filename)
         return false;
     }
 
-    uint16_t x = 0, y = 0;
+    /* Clear grid first */
+    size_t total_words = ((size_t)w->height + PADDING) * w->stride;
+    memset(w->curr, 0, total_words * sizeof(uint64_t));
+    memset(w->next, 0, total_words * sizeof(uint64_t));
+
+    uint32_t x = 0, y = 0;
     int ch;
-    while ((ch = fgetc(f)) != EOF && y < w->height)
+    while ((ch = fgetc(f)) != EOF)
     {
+        if (ch == '\r')
+        {
+            int next = fgetc(f);
+            if (next != '\n' && next != EOF)
+            {
+                fprintf(stderr, "Error: lone '\\r' in input file.\n");
+                fclose(f);
+                return false;
+            }
+            ch = '\n';
+        }
+
         if (ch == '\n')
         {
+            if (y >= w->height)
+            {
+                fprintf(stderr, "Error: pattern taller than grid (%u rows).\n", w->height);
+                fclose(f);
+                return false;
+            }
             y++;
             x = 0;
         }
-        else if (ch != '\r')
+        else if (ch == '*' || ch == '.')
         {
-            if (x < w->width)
-                set_cell_state(w, x, y, ch == '*');
+            if (y >= w->height)
+            {
+                fprintf(stderr, "Error: pattern taller than grid (%u rows).\n", w->height);
+                fclose(f);
+                return false;
+            }
+            if (x >= w->width)
+            {
+                fprintf(stderr, "Error: row %u wider than grid (%u cols).\n", y + 1, w->width);
+                fclose(f);
+                return false;
+            }
+            set_cell_state(w, (uint16_t)x, (uint16_t)y, ch == '*');
             x++;
         }
+        else
+        {
+            fprintf(stderr, "Error: invalid char '%c' at row %u, col %u.\n",
+                    (ch >= 32 && ch <= 126) ? ch : '?', y + 1, x + 1);
+            fclose(f);
+            return false;
+        }
     }
-    fclose(f);
+
+    if (ferror(f))
+    {
+        perror("read input");
+        fclose(f);
+        return false;
+    }
+    if (fclose(f) != 0)
+    {
+        perror("fclose input");
+        return false;
+    }
     return true;
 }
 
@@ -247,11 +385,32 @@ bool world_save_file(const World *w, const char *filename)
     {
         for (uint16_t x = 0; x < w->width; x++)
         {
-            fputc(get_cell_state(w, x, y) ? '*' : '.', f);
+            if (fputc(get_cell_state(w, x, y) ? '*' : '.', f) == EOF)
+            {
+                perror("write output");
+                fclose(f);
+                return false;
+            }
         }
-        fputc('\n', f);
+        if (fputc('\n', f) == EOF)
+        {
+            perror("write output");
+            fclose(f);
+            return false;
+        }
     }
-    fclose(f);
+
+    if (ferror(f))
+    {
+        perror("write output");
+        fclose(f);
+        return false;
+    }
+    if (fclose(f) != 0)
+    {
+        perror("fclose output");
+        return false;
+    }
     return true;
 }
 

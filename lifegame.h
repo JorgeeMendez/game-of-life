@@ -36,7 +36,11 @@ void world_free(World *w);
 bool get_cell_state(const World *w, uint16_t x, uint16_t y);
 void set_cell_state(World *w, uint16_t x, uint16_t y, bool alive);
 
-/* Simulates one generation */
+/* Scalar spec helpers (not used in the bitwise generation loop) */
+uint8_t num_neighbors(const World *w, uint16_t x, uint16_t y, Boundary boundary);
+bool get_next_state(const World *w, uint16_t x, uint16_t y, Boundary boundary);
+
+/* Simulates one generation (64 cells at a time via bitwise ops) */
 void next_generation(World *w, Boundary boundary);
 
 /* File and terminal functions */
