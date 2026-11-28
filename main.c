@@ -1,118 +1,129 @@
+#define _POSIX_C_SOURCE 199309L
+#include "lifegame.h"
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
+#include <time.h>
 
-#define BITS_PER_WORD 64
-
-// STRUCTURES AND ENUMERATIONS
-typedef enum Boundary : uint8_t
+static bool parse_boundary(const char *s, Boundary *b)
 {
-    EDGE,
-    TORUS,
-    MIRROR,
-    RIM
-} Boundary;
-
-typedef struct AppState
-{
-    uint16_t height;
-    uint16_t width;
-    uint16_t gens;
-    uint8_t targetHz;
-    Boundary boundary;
-    const char *inputFile;
-    const char *targetFile;
-} AppState;
-
-void printWord(uint64_t word, size_t *cellCol, size_t cellWidth)
-{
-    for (size_t bit = 0; bit < BITS_PER_WORD && *cellCol < cellWidth; bit++)
-    {
-        ((word >> bit) & 1) ? printf("*") : printf(".");
-        (*cellCol)++;
-    }
+    if (strcmp(s, "edge") == 0)
+        *b = BOUNDARY_EDGE;
+    else if (strcmp(s, "torus") == 0)
+        *b = BOUNDARY_TORUS;
+    else if (strcmp(s, "mirror") == 0)
+        *b = BOUNDARY_MIRROR;
+    else if (strcmp(s, "rim") == 0)
+        *b = BOUNDARY_RIM;
+    else
+        return false;
+    return true;
 }
-
-void printGrid(const uint64_t *grid, size_t totalWords, size_t wordsPerRow, size_t cellWidth)
-{
-    size_t cellCol = 0;
-    for (size_t wordIdx = 0; wordIdx < totalWords; wordIdx++)
-    {
-        size_t wordCol = wordIdx % wordsPerRow;
-        printWord(grid[wordIdx], &cellCol, cellWidth);
-
-        if (wordCol == wordsPerRow - 1)
-        {
-            printf("\n");
-            cellCol = 0;
-        }
-    }
-    printf("\n");
-}
-
-/*
-bool getCellState(size_t cellX, size_t cellY)
-{
-}
-
-uint8_t countNeighbors(size_t cellX, size_t cellY)
-{
-}
-*/
-
-// void initializeGame(int argc, char *argv[], AppState *state) {}
 
 int main(int argc, char *argv[])
 {
-    AppState state = {.height = 2, .width = 5, .gens = 100, .targetHz = 60, .boundary = TORUS};
+    uint16_t width = 40, height = 20, target_hz = 60;
+    uint32_t gens = 500;
+    Boundary boundary = BOUNDARY_TORUS;
+    const char *in_file = NULL, *out_file = NULL;
 
-    /*
     for (int i = 1; i < argc; i++)
     {
-        if (!strcmp(argv[i], "--height"))
-            state.height = (uint16_t)atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--width"))
-            state.width = (uint16_t)atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--gens"))
-            state.gens = (uint16_t)atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--hz"))
-            state.targetHz = (uint8_t)atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--torus"))
-            state.boundary = TORUS;
-        else if (!strcmp(argv[i], "--mirror"))
-            state.boundary = MIRROR;
-        else if (!strcmp(argv[i], "--rim"))
-            state.boundary = RIM;
-        else if (!strcmp(argv[i], "--edge"))
-            state.boundary = EDGE;
-        else if (!strcmp(argv[i], "--input"))
-            state.inputFile = argv[++i];
-        else if (!strcmp(argv[i], "--output"))
-            state.targetFile = argv[++i];
+        if (!strcmp(argv[i], "--width") && i + 1 < argc)
+            width = (uint16_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--height") && i + 1 < argc)
+            height = (uint16_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--gens") && i + 1 < argc)
+            gens = (uint32_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--target-hz") && i + 1 < argc)
+            target_hz = (uint16_t)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--in") && i + 1 < argc)
+            in_file = argv[++i];
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc)
+            out_file = argv[++i];
+        else if (!strcmp(argv[i], "--boundary") && i + 1 < argc)
+        {
+            if (!parse_boundary(argv[++i], &boundary))
+            {
+                fprintf(stderr, "Invalid boundary (use edge|torus|mirror|rim).\n");
+                return 1;
+            }
+        }
         else
         {
-            printf("Unknown: %s\n", argv[i]);
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
             return 1;
         }
     }
-    */
 
-    size_t rowCount = state.height;
-    size_t wordsPerRow = (state.width + BITS_PER_WORD - 1) / BITS_PER_WORD;
-    size_t totalWords = rowCount * wordsPerRow;
-    printf("rows: %zu\nwords per row: %zu\n", rowCount, wordsPerRow);
+    World w;
+    if (!world_init(&w, width, height))
+        return 1;
 
-    uint64_t *grid = calloc(totalWords, sizeof(*grid));
-    if (grid == NULL)
+    if (in_file)
     {
-        perror("Grid memory allocation failed.\n");
+        if (!world_load_file(&w, in_file))
+        {
+            world_free(&w);
+            return 1;
+        }
+    }
+    else
+    {
+        world_load_glider(&w);
+    }
+
+    char *row_buf = malloc(width + 1);
+    if (!row_buf)
+    {
+        world_free(&w);
         return 1;
     }
 
-    printGrid(grid, totalWords, wordsPerRow, state.width);
+    double total_us = 0.0, worst_us = 0.0;
+    double frame_ns = (target_hz > 0) ? (1e9 / target_hz) : 0.0;
 
-    free(grid);
+    printf("\033[2J\033[?25l"); /* Clear screen, hide cursor */
+
+    for (uint32_t g = 0; g < gens; g++)
+    {
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+
+        next_generation(&w, boundary);
+
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double ns = (double)(t1.tv_sec - t0.tv_sec) * 1e9 + (double)(t1.tv_nsec - t0.tv_nsec);
+        double us = ns / 1e3;
+
+        total_us += us;
+        if (us > worst_us)
+            worst_us = us;
+
+        world_print(&w, row_buf);
+
+        if (frame_ns > 0.0 && ns < frame_ns)
+        {
+            double rem = frame_ns - ns;
+            struct timespec req = {(time_t)(rem / 1e9), (long)((long long)rem % 1000000000LL)};
+            nanosleep(&req, NULL);
+        }
+    }
+
+    printf("\033[?25h"); /* Show cursor */
+
+    if (out_file)
+        world_save_file(&w, out_file);
+
+    double avg_us = (gens > 0) ? (total_us / gens) : 0.0;
+    double jitter_us = worst_us - avg_us;
+
+    printf("\n--- Timing (%u gens, %ux%u) ---\n", gens, width, height);
+    printf("Average : %.2f us (%.4f ms)\n", avg_us, avg_us / 1000.0);
+    printf("Worst   : %.2f us (%.4f ms)\n", worst_us, worst_us / 1000.0);
+    printf("Jitter  : %.2f us (%.4f ms)\n", jitter_us, jitter_us / 1000.0);
+
+    free(row_buf);
+    world_free(&w);
     return 0;
 }
