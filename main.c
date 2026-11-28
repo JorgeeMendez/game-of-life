@@ -5,7 +5,7 @@
 #include <time.h>
 
 #define TYPESIZE 64
-#define GENS 1000
+#define GENS 10000
 
 #define PADDING 2 //Edge padding for now 
 
@@ -90,14 +90,47 @@ int main()
     // coordonnées y * word + x pour atterir dans la case (x,y) (ici on utilise stride car il y'a un padding mais c'est la meme)
 
     //PATTERN COOL
-    p[5 * STRIDE + 1] = 0x09ULL << 5;   // X . . X .
-    p[6 * STRIDE + 1] = 0x10ULL << 5;   // . . . . X
-    p[7 * STRIDE + 1] = 0x11ULL << 5;   // X . . . X
-    p[8 * STRIDE + 1] = 0x1EULL << 5;   // . X X X X
+    // Glider
+    p[1 * STRIDE + 1] |= 0x2ULL << 40;   // . X .
+    p[2 * STRIDE + 1] |= 0x4ULL << 40;   // . . X
+    p[3 * STRIDE + 1] |= 0x7ULL << 40;   // X X X
 
-    p[4 * STRIDE + 1] = 0x6ULL << 48;   // . X X
-    p[5 * STRIDE + 1] = 0x3ULL << 48;   // X X .
-    p[6 * STRIDE + 1] = 0x2ULL << 48;   // . X .
+    // LWSS (vaisseau)
+    p[5 * STRIDE + 1] |= 0x09ULL << 5;   // X . . X .
+    p[6 * STRIDE + 1] |= 0x10ULL << 5;   // . . . . X
+    p[7 * STRIDE + 1] |= 0x11ULL << 5;   // X . . . X
+    p[8 * STRIDE + 1] |= 0x1EULL << 5;   // . X X X X
+
+    // Pentadecathlon (oscillateur période 15)
+    p[15 * STRIDE + 2] |= 0x084ULL << 30;   // . . X . . . . X . .
+    p[16 * STRIDE + 2] |= 0x37BULL << 30;   // X X . X X X X . X X
+    p[17 * STRIDE + 2] |= 0x084ULL << 30;   // . . X . . . . X . .
+
+    // Pulsar
+    uint64_t pulsar[13] = {
+        0x71C, 0, 0x10A1, 0x10A1, 0x10A1, 0x71C, 0,
+        0x71C, 0x10A1, 0x10A1, 0x10A1, 0, 0x71C
+    };
+    for (int i = 0; i < 13; i++)
+        p[(i + 20) * STRIDE + 3] |= pulsar[i] << 20;
+
+    // R-pentomino (chaos)
+    p[30 * STRIDE + 2] |= 0x6ULL << 10;   // . X X
+    p[31 * STRIDE + 2] |= 0x3ULL << 10;   // X X .
+    p[32 * STRIDE + 2] |= 0x2ULL << 10;   // . X .
+
+    // Beacon
+    p[40 * STRIDE + 1] |= 0x3ULL << 5;   // X X . .
+    p[41 * STRIDE + 1] |= 0x3ULL << 5;   // X X . .
+    p[42 * STRIDE + 1] |= 0xCULL << 5;   // . . X X
+    p[43 * STRIDE + 1] |= 0xCULL << 5;   // . . X X
+
+    // Toad
+    p[44 * STRIDE + 1] |= 0xEULL << 30;   // . X X X
+    p[45 * STRIDE + 1] |= 0x7ULL << 30;   // X X X .
+
+    // Blinker
+    p[47 * STRIDE + 2] |= 0x7ULL << 40;   // X X X
     //FIN PATTERN COOL
 
     //claude help
@@ -125,6 +158,7 @@ int main()
             xLocal = 0;
         }
         fflush(stdout);
+        usleep(1000000 / 15); // ATTENTION !!!! A SUPPRIMER !!! juste pour avoir un jolie affichage 
 
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0); //get time avec claude
